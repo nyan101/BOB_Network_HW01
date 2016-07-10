@@ -2,6 +2,11 @@
 #include <pcap.h>       // for packet capturing
 #include <stdio.h>
 #include <stdlib.h>
+//for structure
+#include <netinet/ether.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
 
 void callback(u_char *useless, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 
@@ -34,70 +39,41 @@ int main(int argc, char **argv)
 // 패킷 헤더에 대한 정보: http://www.netmanias.com/ko/post/blog/5372/ethernet-ip-tcp-ip/packet-header-ethernet-ip-tcp-ip
 void callback(u_char *useless, const struct pcap_pkthdr *pkthdr, const u_char *packet)
 {
-    int i, Etype, ProtocolID, IPlen;
-    u_char *srcMAC, *dstMAC;
-    u_char *srcIP, *dstIP;
-    int srcPort, dstPort;
+    struct ether_header *etherHdr;
+    struct ip *ipHdr;
+    struct tcphdr *tcpHdr;
 
     printf("CAPTURE PACKET!\n");
 
     /* ethernet header */
-    srcMAC = packet+6;
-    printf("Source MAC       : ");
-    printf("%02x", srcMAC[0]);
-    for(i=1;i<6;i++)
-        printf(":%02x", srcMAC[i]);
-    printf("\n");
-
-    dstMAC = packet;
-    printf("Destination MAC  : ");
-    printf("%02x", dstMAC[0]);
-    for(i=1;i<6;i++)
-        printf(":%02x", dstMAC[i]);
-    printf("\n");
+    etherHdr = (struct ether_header*)packet;
+    printf("Source MAC       : %s\n", ether_ntoa(etherHdr->ether_shost));
+    printf("Destination MAC  : %s\n", ether_ntoa(etherHdr->ether_dhost));
     
     // Check if it's IP packet
-    Etype = ntohs(*(u_short*)(packet+12));
-    if(Etype!=0x0800) // 0x0800 : IP code
+    if(ntohs(etherHdr->ether_type)!=ETHERTYPE_IP)
     {
         printf("Non-IP packet\n\n");
         return;
     }
-    
-    /* IP header */
-    packet += 14; // now packer points to IP header(Ethernet header : 14 byte)
-    
-    srcIP = packet+12;
-    printf("Source IP        : ");
-    printf("%d", srcIP[0]);
-    for(i=1;i<4;i++)
-        printf(".%d", srcIP[i]);
-    printf("\n");
 
-    dstIP = packet+16;
-    printf("Destination IP   : ");
-    printf("%d", dstIP[0]);
-    for(i=1;i<4;i++)
-        printf(".%d", dstIP[i]);
-    printf("\n");
-    
+    /* IP header */
+    ipHdr = (struct ip*)(packet + 14/*Ether_LEN*/);
+    printf("Source IP        : %s\n", inet_ntoa(ipHdr->ip_src));
+    printf("Destination IP   : %s\n", inet_ntoa(ipHdr->ip_dst));
+
     // Check if it's TCP packet
-    ProtocolID = *(u_char*)(packet+9);
-    if(ProtocolID!=6) // 6 : TCP code
+    if(ipHdr->ip_p != IPPROTO_TCP)
     {
-        printf("Non-TCP packet (Protocol: %d)\n\n", ProtocolID);
+        printf("Non-TCP packet\n\n");
         return;
     }
 
     /* TCP header */
-    IPlen = (*(u_char*)(packet) & 0xf) * 4;
-    packet += IPlen; // now packer points to TCP header
+    tcpHdr = (struct tcphdr*)(packet + 14/*Ether_LEN*/ + 4*ipHdr->ip_hl/*IP_Header_LEN*/);
+    printf("Source port      : %d\n", ntohs(tcpHdr->th_sport));
+    printf("Destination port : %d\n", ntohs(tcpHdr->th_dport));
 
-    srcPort = ntohs(*(u_short*)(packet));
-    printf("Source Port      : %d\n", srcPort);
-
-    dstPort = ntohs(*(u_short*)(packet+2));
-    printf("Destination Port : %d\n", dstPort);
 
     printf("\n");
 }    
